@@ -6,7 +6,7 @@ import {
 } from "../supabase/functions/_shared/presentation.ts";
 import { displayBirthday } from "../supabase/functions/_shared/birthdays.ts";
 import { callCircle, supabase } from "./supabase";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Gift,
   Cake,
@@ -59,11 +59,17 @@ export default function Home({
     ),
     [calendarMonth, CALMONTH] = useState(() => new Date().getMonth()),
     [calendarYear, CALYEAR] = useState(() => new Date().getFullYear());
+  // True only while a primary press both started and ended on the modal
+  // backdrop, so dragging into or out of the window doesn't close it.
+  const backdropPress = useRef(false);
   async function api(body?: any) {
     try {
       const { status, json: j } = await callCircle(body || {});
       if (status === 401) {
-        await supabase.auth.signOut();
+        // The server already refused this session, so just forget it here.
+        // A global sign-out would call Supabase again, and if that fails the
+        // page stays stuck on "Gathering your Banana bunch…".
+        await supabase.auth.signOut({ scope: "local" });
         return null;
       }
       if (status >= 400) throw Error(j.error);
@@ -93,18 +99,23 @@ export default function Home({
       if (e && !(e.revealedTo || []).includes(d.user) && !modal)
         M("Organiser raffle");
     }
+    // Only open the raffle when arriving on an event. Re-running on every data
+    // refresh would reopen it after the person closes it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, eid, d?.user]);
   const reward = d?.rewards?.find(
     (r: any) => !hiddenRewards.includes(r.notificationId),
   );
+  const rewardId = reward?.notificationId,
+    rewardKey = reward?.key;
   useEffect(() => {
-    if (!reward) return;
+    if (!rewardId) return;
     const timer = setTimeout(() => {
-      HIDE((keys) => [...keys, reward.notificationId]);
-      api({ action: "ackReward", key: reward.key });
+      HIDE((keys) => [...keys, rewardId]);
+      api({ action: "ackReward", key: rewardKey });
     }, 5000);
     return () => clearTimeout(timer);
-  }, [reward?.notificationId]);
+  }, [rewardId, rewardKey]);
   if (!d)
     return (
       <div className="loading">
@@ -272,7 +283,8 @@ export default function Home({
       EDIT(null);
       PHOTO("");
       if (action === "changePassword") {
-        await supabase.auth.signOut();
+        // The server has already ended every session for this account.
+        await supabase.auth.signOut({ scope: "local" });
         return;
       }
       if (result.message) N(result.message);
@@ -1544,13 +1556,25 @@ export default function Home({
         </div>
       )}
       {modal && (
-        <div className="modal-backdrop" onClick={() => M("")}>
+        <div
+          className="modal-backdrop"
+          onPointerDown={(e) => {
+            backdropPress.current =
+              e.button === 0 && e.target === e.currentTarget;
+          }}
+          onPointerUp={(e) => {
+            if (e.target !== e.currentTarget) backdropPress.current = false;
+          }}
+          onClick={(e) => {
+            if (backdropPress.current && e.target === e.currentTarget) M("");
+            backdropPress.current = false;
+          }}
+        >
           <section
             role="dialog"
             aria-modal="true"
             aria-label={modal}
             className="modal"
-            onClick={(e) => e.stopPropagation()}
           >
             <button
               className="modal-close"
@@ -2123,6 +2147,8 @@ function UsersPanel({
   }
   useEffect(() => {
     refresh();
+    // Load the list once when the page opens; actions call refresh() themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   async function create(e: any) {
     e.preventDefault();
@@ -2456,8 +2482,10 @@ function OrganiserReveal({
   onDone: () => Promise<void>;
 }) {
   const [phase, PHASE] = useState(0),
-    [landed, LANDED] = useState(false),
+    // The phase whose wheel has finished spinning; a new phase starts unlanded.
+    [landedPhase, LANDED] = useState<number | null>(null),
     [saving, SAVING] = useState(false);
+  const landed = landedPhase === phase;
   const role = phase === 0 ? "gift" : "cake";
   const selected = event[role];
   const year = String(event.date).slice(0, 4),
@@ -2507,11 +2535,10 @@ function OrganiserReveal({
       ")"
     : "#edd382";
   useEffect(() => {
-    LANDED(false);
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    const t = setTimeout(() => LANDED(true), reduced ? 50 : 3300);
+    const t = setTimeout(() => LANDED(phase), reduced ? 50 : 3300);
     return () => clearTimeout(t);
   }, [phase]);
   const name = (id: string) =>
@@ -2569,7 +2596,6 @@ function OrganiserReveal({
         onClick={async () => {
           if (phase === 0) {
             PHASE(1);
-            LANDED(false);
           } else {
             SAVING(true);
             await onDone();
