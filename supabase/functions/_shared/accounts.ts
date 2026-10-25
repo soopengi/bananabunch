@@ -35,6 +35,6 @@ export function validateUser(input: any, allowMissingBirthday = false) {
 }
 
 export function validatePassword(value: any) {
-  if (typeof value !== "string" || value.length < 12 || value.length > 256)
-    throw Error("Use a password between 12 and 256 characters.");
+  if (typeof value !== "string" || value.length < 8 || value.length > 256)
+    throw Error("Use a password between 8 and 256 characters.");
 }

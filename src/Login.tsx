@@ -179,7 +179,7 @@ export default function Login({
                     type="password"
                     autoComplete="current-password"
                     required
-                    minLength={12}
+                    minLength={8}
                     placeholder="Your password"
                   />
                 </label>
@@ -240,7 +240,7 @@ export default function Login({
                     name="password"
                     type="password"
                     autoComplete="new-password"
-                    minLength={12}
+                    minLength={8}
                     required
                   />
                 </label>
@@ -250,7 +250,7 @@ export default function Login({
                     name="confirmPassword"
                     type="password"
                     autoComplete="new-password"
-                    minLength={12}
+                    minLength={8}
                     required
                   />
                 </label>

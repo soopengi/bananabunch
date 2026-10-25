@@ -1714,7 +1714,7 @@ export default function Home({
                         name="newPassword"
                         type="password"
                         autoComplete="new-password"
-                        minLength={12}
+                        minLength={8}
                         maxLength={256}
                         required
                       />
@@ -1725,7 +1725,7 @@ export default function Home({
                         name="confirmPassword"
                         type="password"
                         autoComplete="new-password"
-                        minLength={12}
+                        minLength={8}
                         maxLength={256}
                         required
                       />
@@ -1882,7 +1882,7 @@ export default function Home({
                         <input
                           name="password"
                           type="password"
-                          minLength={12}
+                          minLength={8}
                           required
                         />
                       </label>
@@ -2186,7 +2186,7 @@ function UsersPanel({
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={12}
+                minLength={8}
                 maxLength={256}
               />
             </label>
@@ -2197,7 +2197,7 @@ function UsersPanel({
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={12}
+                minLength={8}
                 maxLength={256}
               />
             </label>
@@ -2327,7 +2327,7 @@ function UsersPanel({
                   name="password"
                   type="password"
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={8}
                   maxLength={256}
                   required
                 />
@@ -2338,7 +2338,7 @@ function UsersPanel({
                   name="confirmPassword"
                   type="password"
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={8}
                   maxLength={256}
                   required
                 />

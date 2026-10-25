@@ -32,7 +32,7 @@ Under **Authentication**:
 
 1. **Sign In / Providers → Email**:
    - Turn **off** "Confirm email". Accounts are created by the admin, so there's nothing to confirm.
-   - Set **Minimum password length** to **12**.
+   - Set **Minimum password length** to match the app's minimum (`validatePassword` in `supabase/functions/_shared/accounts.ts`).
    - Optionally, turn **off** "Allow new users to sign up". The app never uses public sign-up, and admins create accounts through the server.
 2. **URL Configuration**:
    - **Site URL**: your GitHub Pages address, e.g. `https://soopengi.github.io/bananabunch/` (use `http://localhost:5173` until the site is live).
