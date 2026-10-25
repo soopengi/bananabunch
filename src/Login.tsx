@@ -5,7 +5,6 @@ import { callCircle, siteUrl, supabase } from "./supabase";
 
 type Mode = "login" | "request" | "recovery" | "setup";
 
-const mascot = import.meta.env.BASE_URL + "banana-ninja-v1.png";
 
 /**
  * The login screen. `recovering` is true after someone opens a password-reset
@@ -104,7 +103,7 @@ export default function Login({
     setup: "Plant the first Banana.",
   }[mode];
   const intro = {
-    login: "Your bunch is waiting. Log in to bananacircle.",
+    login: "Your bunch is waiting. Log in to bananabunch.",
     request:
       "Enter the recovery email saved in your profile and we’ll send you a reset link.",
     recovery: "Choose a new password for your Banana account.",
@@ -121,14 +120,10 @@ export default function Login({
   return (
     <main className="login-screen">
       <span className="login-brand">
-        <img
-          className="brand-mascot"
-          src={mascot}
-          alt=""
-          width="64"
-          height="72"
-        />
-        banana<span>circle</span>
+        <span className="brand-mascot brand-emoji" aria-hidden="true">
+          🍌
+        </span>
+        banana<span>bunch</span>
       </span>
       <div className="login-layout">
         <section className="login-story">
@@ -144,12 +139,9 @@ export default function Login({
           </p>
           <div className="login-decoration mascot-decoration">
             <span>✳</span>
-            <img
-              src={mascot}
-              alt="The bananacircle banana ninja mascot"
-              width="205"
-              height="220"
-            />
+            <span className="mascot-emoji" aria-hidden="true">
+              🍌
+            </span>
             <span>✧</span>
           </div>
         </section>

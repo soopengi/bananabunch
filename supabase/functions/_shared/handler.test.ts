@@ -149,6 +149,13 @@ test("visitors must log in, and are told when the bunch needs its first admin", 
   assert.equal((await handle({}, after.as(null))).body.needsSetup, false);
 });
 
+test("the mascot is only handed out to signed-in members, as a private link", async () => {
+  const p = await setup();
+  assert.equal((await handle({}, p.as(null))).body.mascotUrl, undefined);
+  const r = await handle({}, p.as("ben"));
+  assert.equal(r.body.mascotUrl, "https://signed/app/banana-ninja-v1.png");
+});
+
 test("the first admin needs the setup secret, and only once", async () => {
   const p = fakeProject();
   const wrong = await handle(

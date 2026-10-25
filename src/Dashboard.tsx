@@ -473,15 +473,21 @@ export default function Home({
     <div className="shell">
       <aside className="sidebar">
         <button className="brand" onClick={() => P("Dashboard")}>
-          <img
-            className="brand-mascot"
-            src={import.meta.env.BASE_URL + "banana-ninja-v1.png"}
-            alt=""
-            width="46"
-            height="52"
-          />
+          {d.mascotUrl ? (
+            <img
+              className="brand-mascot"
+              src={d.mascotUrl}
+              alt=""
+              width="46"
+              height="52"
+            />
+          ) : (
+            <span className="brand-mascot brand-emoji" aria-hidden="true">
+              🍌
+            </span>
+          )}
           <span>
-            banana<span>circle</span>
+            banana<span>bunch</span>
           </span>
           <i>✳</i>
         </button>
@@ -1489,7 +1495,7 @@ export default function Home({
             <span>
               Made for the Bananas who make your day. <Heart size={11} />
             </span>
-            <span>bananacircle · Private Banana bunch</span>
+            <span>bananabunch · Private Banana bunch</span>
           </footer>
         </main>
       </div>

@@ -1,4 +1,4 @@
-// The bananacircle API, independent of Supabase so it can be tested with fakes.
+// The bananabunch API, independent of Supabase so it can be tested with fakes.
 // supabase/functions/circle/index.ts plugs in the real database, sign-in and
 // photo storage.
 //
@@ -30,6 +30,8 @@ import { currentEventWishlist, syncWishlistOptions } from "./wishlist-sync.ts";
 
 const DAY_MS = 86400000;
 const GROUP = "group";
+/** The banana ninja mascot, uploaded once to the private photos bucket. */
+const MASCOT_PATH = "app/banana-ninja-v1.png";
 
 /** Where circle documents are kept. Updates only apply if `version` still matches. */
 export interface Store {
@@ -778,9 +780,11 @@ async function viewFor(circle: any, uid: string, ctx: Context, result: any) {
   const allowed = [...ids]
     .map((id) => circle.photos?.[id])
     .filter((photo) => photo && canViewPhoto(circle, uid, photo));
-  const urls = allowed.length
-    ? await ctx.photos.signedUrls(allowed.map((p: any) => p.path))
-    : {};
+  // The mascot lives in the private bucket too, so only members can load it.
+  const urls = await ctx.photos.signedUrls([
+    ...allowed.map((p: any) => p.path),
+    MASCOT_PATH,
+  ]);
   const photoUrls: Record<string, string> = {};
   for (const photo of allowed)
     if (urls[photo.path]) photoUrls[photo.id] = urls[photo.path];
@@ -788,6 +792,7 @@ async function viewFor(circle: any, uid: string, ctx: Context, result: any) {
   return {
     ...out,
     photoUrls,
+    mascotUrl: urls[MASCOT_PATH] || "",
     result,
     rewards: pendingRewards(circle, uid),
     admin: isAdmin,
@@ -897,7 +902,7 @@ async function resetRequest(body: any, ctx: Context): Promise<Reply> {
       body: JSON.stringify({
         from: ctx.env.EMAIL_FROM,
         to: [email],
-        subject: "Reset your bananacircle password",
+        subject: "Reset your bananabunch password",
         text:
           "Hi " +
           person.name +
@@ -1002,7 +1007,7 @@ async function deliver(ctx: Context) {
           body: JSON.stringify({
             from: env.EMAIL_FROM,
             to: [person.email],
-            subject: "A little nudge from bananacircle",
+            subject: "A little nudge from bananabunch",
             text: n.text,
           }),
         },

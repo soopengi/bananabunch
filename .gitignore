@@ -1,19 +1,12 @@
 # Dependencies
 /node_modules/
 
-# Build output and framework state
+# Build output
 /dist/
-/.next/
-/.vinext/
-next-env.d.ts
 *.tsbuildinfo
-
-# Local database and Cloudflare tool state
-/.wrangler/
 
 # Local secrets
 .env*
-.dev.vars*
 *.pem
 
 # Logs and OS files

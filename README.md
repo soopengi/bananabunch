@@ -1,4 +1,4 @@
-# bananacircle
+# bananabunch
 
 A private web app for a group of friends (the "Banana bunch") to organise each other's birthdays: share wishlists, suggest and vote on gifts, chip in on the cake, and take turns being the organiser. The birthday person never sees their own birthday plans, so the surprise stays a surprise.
 
@@ -71,17 +71,12 @@ Points from a birthday stay hidden from the birthday person until that event is 
 - In-app notifications (the bell) appear when an event opens, when voting is about to close or is extended, when a gift is chosen, when organisers change, and a week before the birthday.
 - **Email** notifications are optional: Bananas opt in from their profile, and the app needs a Resend API key.
 
-### Not finished yet
-
-- **Birthday chat.** The rules for a private chat per birthday and comment threads on gift ideas exist and are tested (`supabase/functions/_shared/discussions.ts`), but no screen or API action uses them yet. The same was true on the original version.
-
 ---
 
 ## Repo structure
 
 ```
 index.html                         The page shell (title, icon)
-public/                            Images (the banana mascot)
 src/
   main.tsx                         Starts the React app
   App.tsx                          Shows the login screen or the dashboard

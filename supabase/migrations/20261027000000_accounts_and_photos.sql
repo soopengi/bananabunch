@@ -1,4 +1,4 @@
--- Adds what the bananacircle version needs: private photo storage, a way to
+-- Adds what the bananabunch version needs: private photo storage, a way to
 -- sign someone out everywhere, and removal of the old demo circle.
 
 -- Private bucket for wishlist and gift-idea photos. Only the "circle" Edge

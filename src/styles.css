@@ -2037,7 +2037,7 @@ button:disabled {
     margin-top: 20px;
   }
 }
-/* bananacircle palette */
+/* bananabunch palette */
 body,
 .shell,
 .workspace,
@@ -2244,6 +2244,20 @@ textarea::placeholder {
 }
 .mascot-decoration > span {
   font-size: 34px;
+}
+/* Stand-in for the mascot wherever it can't be loaded privately. */
+.brand-emoji {
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  line-height: 1;
+}
+.login-brand .brand-emoji {
+  font-size: 48px;
+}
+.mascot-decoration > .mascot-emoji {
+  font-size: 150px;
+  line-height: 1;
 }
 @media (max-width: 900px) {
   .brand .brand-mascot {

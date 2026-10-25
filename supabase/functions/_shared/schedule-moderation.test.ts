@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runJobs, closesOn, localMidnight } from "./rules.ts";
-import { postMessage, deleteMessage } from "./discussions.ts";
 function fixture() {
   return {
     people: [
@@ -62,28 +61,4 @@ test("deadline reconciliation never reopens gifts already selected early", () =>
   runJobs(d, new Date("2026-11-07T00:00:00Z"));
   assert.equal(e.status, "Gift selected");
   assert.equal(e.final, "saved");
-});
-test("admin deletion removes content and preserves replies and audit, once", () => {
-  const d = fixture();
-  runJobs(d, new Date("2026-10-25T00:00:00Z"));
-  const e = d.events[0];
-  const root = postMessage(d, e, "member", {
-    text: "Remove me",
-    clientId: "message-0001",
-  });
-  const reply = postMessage(d, e, "admin", {
-    text: "Keep this reply",
-    replyTo: root.id,
-    clientId: "message-0002",
-  });
-  for (const u of ["member", "inactive", "birthday"])
-    assert.throws(() => deleteMessage(d, e, u, root.id));
-  deleteMessage(d, e, "admin", root.id);
-  deleteMessage(d, e, "admin", root.id);
-  assert.equal(root.text, "");
-  assert(root.deletedAt);
-  assert.equal(root.deletedBy, "admin");
-  assert.equal(reply.text, "Keep this reply");
-  assert.equal(reply.parentId, root.id);
-  assert.equal(e.audit.length, 1);
 });

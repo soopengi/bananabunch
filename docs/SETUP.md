@@ -1,10 +1,10 @@
-# Setting up bananacircle
+# Setting up bananabunch
 
 How to set up Supabase, deploy the site to GitHub Pages and run it locally. You only need most of this once; see [Updating](#updating) for the steps you'll repeat.
 
 ## Updating
 
-- **Website changes** (anything in `src/`, `public/` or `index.html`) go live automatically when you push to `main`.
+- **Website changes** (anything in `src/` or `index.html`) go live automatically when you push to `main`.
 - **Server changes** (anything in `supabase/functions/`) need `npm run deploy:function`.
 - **Database changes** (a new file in `supabase/migrations/`): paste it into Supabase's **SQL Editor** and run it.
 
@@ -96,7 +96,7 @@ select cron.schedule(
 Password-reset emails and email notifications go out through [Resend](https://resend.com) (the free plan is plenty). Create an API key there, then:
 
 ```bash
-npx supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM="bananacircle <hi@your-domain.com>"
+npx supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM="bananabunch <hi@your-domain.com>"
 ```
 
 Without these, everything else works: there's just no "forgot password" email, so an admin resets passwords instead.
