@@ -12,6 +12,7 @@
     "test": "node --test supabase/functions/_shared/*.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "reset-bunch": "node --env-file-if-exists=.env.local scripts/reset-bunch.mjs",
     "deploy:function": "supabase functions deploy circle --no-verify-jwt --use-api"
   },
   "dependencies": {

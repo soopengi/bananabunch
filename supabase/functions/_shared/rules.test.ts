@@ -8,6 +8,7 @@ import {
   runJobs,
   visible,
   award,
+  reassignUpcomingOrganisers,
 } from "./rules.ts";
 test("month clamp and leap birthday", () => {
   assert.equal(opensOn("2027-03-31"), "2027-02-28");
@@ -129,4 +130,96 @@ test("birthday voting cap uses group timezone", () => {
     localMidnight("2026-06-08", "Australia/Sydney"),
     "2026-06-07T14:00:00.000Z",
   );
+});
+
+test("wishlist snapshots stay hidden for seven days from the scheduled birthday-page opening", () => {
+  const d = fresh();
+  d.events = [
+    {
+      id: "birthday",
+      person: "a",
+      created: "2026-10-05T00:00:00.000Z",
+      votingOpensAt: "2026-10-01T00:00:00.000Z",
+      date: "2026-11-01",
+      options: [
+        { id: "wish", kind: "wishlist" },
+        { id: "idea", kind: "suggestion" },
+      ],
+    },
+  ];
+  const early = visible(d, "b", new Date("2026-10-07T23:59:59.000Z")).events[0];
+  assert.equal(early.wishlistHidden, true);
+  assert.deepEqual(
+    early.options.map((o: any) => o.id),
+    ["idea"],
+  );
+  const ready = visible(d, "b", new Date("2026-10-08T00:00:00.000Z")).events[0];
+  assert.equal(ready.wishlistHidden, undefined);
+  assert.equal(ready.options.length, 2);
+});
+
+test("admin redraw reassigns upcoming events in date order, skipping done ones", () => {
+  const d: any = {
+    people: [
+      { id: "admin", admin: true },
+      { id: "a" },
+      { id: "b" },
+      { id: "c" },
+      { id: "d" },
+      { id: "e" },
+    ],
+    events: [
+      {
+        id: "three",
+        person: "c",
+        date: "2027-01-05",
+        gift: "admin",
+        cake: "d",
+        tasks: {},
+      },
+      {
+        id: "purchased",
+        person: "b",
+        date: "2026-12-02",
+        gift: "admin",
+        cake: "a",
+        tasks: { "gift complete": true },
+      },
+      {
+        id: "chosen",
+        person: "e",
+        date: "2026-11-20",
+        gift: "c",
+        cake: "d",
+        final: "idea",
+        tasks: {},
+      },
+      {
+        id: "one",
+        person: "a",
+        date: "2026-11-01",
+        gift: "admin",
+        cake: "b",
+        tasks: {},
+      },
+    ],
+    history: [{ event: "chosen", user: "c", role: "gift", date: "2026-11-20" }],
+    settings: { timezone: "Australia/Sydney" },
+  };
+  assert.equal(
+    reassignUpcomingOrganisers(d, "2026-10-01", () => 0),
+    2,
+  );
+  const byId = (id: string) => d.events.find((e: any) => e.id === id);
+  for (const id of ["one", "three"]) {
+    assert.notEqual(byId(id).gift, "admin");
+    assert.equal(byId(id).audit.at(-1).action, "all organisers reassigned");
+  }
+  // Done birthdays keep their organisers, ticks and history.
+  assert.equal(byId("purchased").gift, "admin");
+  assert.equal(byId("purchased").tasks["gift complete"], true);
+  assert.equal(byId("purchased").audit, undefined);
+  assert.equal(byId("chosen").gift, "c");
+  assert(d.history.some((h: any) => h.event === "chosen"));
+  assert.equal(d.history.length, 5);
 });

@@ -38,3 +38,16 @@ export function validatePassword(value: any) {
   if (typeof value !== "string" || value.length < 8 || value.length > 256)
     throw Error("Use a password between 8 and 256 characters.");
 }
+
+/** Zoom (1–3) and focus point (0–100%) for a cropped profile picture. */
+export function photoCrop(input: any) {
+  const clamp = (value: any, fallback: number, min: number, max: number) => {
+    const n = value === "" || value == null ? NaN : Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  };
+  return {
+    zoom: clamp(input.photoZoom, 1, 1, 3),
+    x: clamp(input.photoX, 50, 0, 100),
+    y: clamp(input.photoY, 50, 0, 100),
+  };
+}

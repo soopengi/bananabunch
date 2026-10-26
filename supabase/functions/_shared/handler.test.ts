@@ -501,7 +501,7 @@ test("photos: only images are accepted, and event photos stay hidden from the bi
     { action: "wishlist", name: "Print", photo: up.body.id },
     p.as("cat"),
   );
-  assert.match(borrow.body.error, /not in your wishlist uploads/);
+  assert.match(borrow.body.error, /not one of your uploads/);
 });
 
 test("a save that loses a race is retried instead of overwriting", async () => {
@@ -560,4 +560,218 @@ test("unknown actions and unexpected errors return clean messages", async () => 
   console.error = original;
   assert.equal(r.status, 500);
   assert.equal(r.body.error, "Something went wrong");
+});
+
+test("profile pictures: members set their own, admins can set anyone's", async () => {
+  const p = await setup();
+  const mine = await uploadPhoto(png, "", p.as("ben"));
+  const saved = await handle(
+    {
+      action: "profile",
+      name: "Ben Banana",
+      birthday: "20-11",
+      profilePhoto: mine.body.id,
+      photoZoom: "2",
+      photoX: "0",
+      photoY: "100",
+    },
+    p.as("ben"),
+  );
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const ben = saved.body.people.find((x: any) => x.id === "id-ben");
+  assert.equal(ben.profilePhoto, mine.body.id);
+  assert.deepEqual(ben.profilePhotoCrop, { zoom: 2, x: 0, y: 100 });
+  // Everyone in the bunch gets a link to it.
+  const cat = await handle({}, p.as("cat"));
+  assert.ok(cat.body.photoUrls[mine.body.id]);
+  // Members can't upload for someone else, or use someone else's photo.
+  assert.equal((await uploadPhoto(png, "", p.as("cat"), "id-ben")).status, 403);
+  const borrow = await handle(
+    {
+      action: "profile",
+      name: "Cat Banana",
+      birthday: "01-02",
+      profilePhoto: mine.body.id,
+    },
+    p.as("cat"),
+  );
+  assert.equal(borrow.status, 400);
+  // The admin can.
+  const forCat = await uploadPhoto(png, "", p.as("ada"), "id-cat");
+  assert.equal(forCat.status, 200, JSON.stringify(forCat.body));
+  const set = await handle(
+    {
+      action: "adminProfilePhoto",
+      user: "id-cat",
+      profilePhoto: forCat.body.id,
+    },
+    p.as("ada"),
+  );
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.equal(
+    set.body.people.find((x: any) => x.id === "id-cat").profilePhoto,
+    forCat.body.id,
+  );
+  const notAdmin = await handle(
+    { action: "adminProfilePhoto", user: "id-cat", profilePhoto: "" },
+    p.as("ben"),
+  );
+  assert.equal(notAdmin.status, 400);
+});
+
+test("the admin can save their profile without a birthday", async () => {
+  const p = await setup();
+  const r = await handle(
+    { action: "profile", name: "Ada Admin", birthday: "" },
+    p.as("ada"),
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const member = await handle(
+    { action: "profile", name: "Ben Banana", birthday: "" },
+    p.as("ben"),
+  );
+  assert.equal(member.status, 400);
+});
+
+test("a birthday wishlist stays hidden from the bunch for its first week", async () => {
+  const p = await setup();
+  await handle({ action: "wishlist", name: "Ben's wish" }, p.as("ben"));
+  // Ben's page opened on 20 Oct; it's 25 Oct, so the wishlist is still hidden.
+  const cat = await handle({}, p.as("cat"));
+  const event = cat.body.events.find((e: any) => e.person === "id-ben");
+  assert.equal(event.wishlistHidden, true);
+  assert.deepEqual(event.currentWishlist, []);
+  assert.equal(
+    cat.body.wishlist.some((w: any) => w.owner === "id-ben"),
+    false,
+  );
+  // Ben still sees his own.
+  const ben = await handle({}, p.as("ben"));
+  assert.equal(
+    ben.body.wishlist.some((w: any) => w.owner === "id-ben"),
+    true,
+  );
+});
+
+test("only the admin can redraw every upcoming organiser", async () => {
+  const p = await setup();
+  const member = await handle({ action: "reassignAllOrganisers" }, p.as("ben"));
+  assert.equal(member.status, 400);
+  const r = await handle({ action: "reassignAllOrganisers" }, p.as("ada"));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(
+    r.body.message,
+    /Reassigned organisers for 1 upcoming birthday\./,
+  );
+});
+
+test("an admin can edit someone's calendar event and keep its photo", async () => {
+  const p = await setup();
+  const photo = await uploadPhoto(png, "", p.as("ben"));
+  const added = await handle(
+    {
+      action: "addCalendarEvent",
+      title: "Picnic",
+      date: "2027-01-10",
+      photo: photo.body.id,
+    },
+    p.as("ben"),
+  );
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  const item = added.body.calendarEvents[0];
+  assert.ok(added.body.photoUrls[photo.body.id]);
+  const byOther = await handle(
+    {
+      action: "updateCalendarEvent",
+      id: item.id,
+      title: "Mine now",
+      date: "2027-01-10",
+    },
+    p.as("cat"),
+  );
+  assert.equal(byOther.status, 400);
+  const byAdmin = await handle(
+    {
+      action: "updateCalendarEvent",
+      id: item.id,
+      title: "Picnic in the park",
+      date: "2027-01-10",
+      photo: photo.body.id,
+    },
+    p.as("ada"),
+  );
+  assert.equal(byAdmin.status, 200, JSON.stringify(byAdmin.body));
+  assert.equal(byAdmin.body.calendarEvents[0].title, "Picnic in the park");
+  const gone = await handle(
+    { action: "deleteCalendarEvent", id: item.id },
+    p.as("ben"),
+  );
+  assert.equal(gone.body.calendarEvents.length, 0);
+});
+
+test("the admin can edit a Banana's details, but members can't", async () => {
+  const p = await setup();
+  await handle(
+    {
+      action: "profile",
+      name: "Cat Banana",
+      birthday: "01-02",
+      email: "cat@example.com",
+    },
+    p.as("cat"),
+  );
+  const notAdmin = await handle(
+    {
+      action: "adminUpdateUser",
+      user: "id-cat",
+      name: "Hacked",
+      birthday: "01-01",
+    },
+    p.as("ben"),
+  );
+  assert.equal(notAdmin.status, 400);
+  const taken = await handle(
+    {
+      action: "adminUpdateUser",
+      user: "id-ben",
+      name: "Ben Banana",
+      birthday: "20-11",
+      email: "cat@example.com",
+    },
+    p.as("ada"),
+  );
+  assert.match(taken.body.error, /already in use/);
+  const noBirthday = await handle(
+    {
+      action: "adminUpdateUser",
+      user: "id-ben",
+      name: "Ben Banana",
+      birthday: "",
+    },
+    p.as("ada"),
+  );
+  assert.equal(noBirthday.status, 400);
+  const r = await handle(
+    {
+      action: "adminUpdateUser",
+      user: "id-ben",
+      name: "Benjamin Banana",
+      birthday: "21-12",
+      email: "ben@example.com",
+      description: "Loves puzzles",
+    },
+    p.as("ada"),
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.message, /Benjamin Banana/);
+  const ben = r.body.people.find((x: any) => x.id === "id-ben");
+  assert.equal(ben.name, "Benjamin Banana");
+  assert.equal(ben.birthday, "12-21");
+  assert.equal(ben.description, "Loves puzzles");
+  assert.equal(ben.username, "ben");
+  const list = await handle({ action: "listUsers" }, p.as("ada"));
+  assert.equal(
+    list.body.users.find((u: any) => u.id === "id-ben").email,
+    "ben@example.com",
+  );
 });

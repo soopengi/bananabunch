@@ -1,9 +1,12 @@
-import { votingOpen } from "./voting.ts";
+/** Gift ideas can be added or edited until the gift is chosen, even after voting closes. */
+export function ideasOpen(event: any) {
+  return !!event && !event.final && !event.cancelled;
+}
 
 export function addSuggestion(event: any, idea: any, user: string) {
   if (!event || event.person === user) throw Error("Event not found");
-  if (!votingOpen(event))
-    throw Error("Gift ideas can be changed while voting is open.");
+  if (!ideasOpen(event))
+    throw Error("Gift ideas can be added until the gift is chosen.");
   if (
     event.options.some(
       (o: any) =>
@@ -24,8 +27,8 @@ export function editSuggestion(
   user: string,
 ) {
   if (!event || event.person === user) throw Error("Event not found");
-  if (!votingOpen(event))
-    throw Error("Gift ideas can be edited while voting is open.");
+  if (!ideasOpen(event))
+    throw Error("Gift ideas can be edited until the gift is chosen.");
   const idea = event.options.find(
     (o: any) => o.id === id && o.kind === "suggestion",
   );

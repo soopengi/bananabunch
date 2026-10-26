@@ -106,6 +106,64 @@ export function draw(
       : null,
   };
 }
+/**
+ * Admin tool: redraws the gift and cake organisers for every upcoming birthday,
+ * earliest first. Birthdays that are already done (gift chosen, or anything
+ * marked purchased) keep their organisers. Returns how many changed.
+ */
+export function reassignUpcomingOrganisers(
+  data: any,
+  day = today(data.settings.timezone),
+  random = Math.random,
+) {
+  const done = (e: any) =>
+    e.final ||
+    e.status === "Completed" ||
+    ["gift", "cake"].some((role) => e.tasks?.[role + " complete"]);
+  const events = data.events
+    .filter((e: any) => !e.cancelled && e.date >= day && !done(e))
+    .sort((a: any, b: any) => a.date.localeCompare(b.date));
+  const ids = new Set(events.map((e: any) => e.id));
+  data.history = data.history.filter((h: any) => !ids.has(h.event));
+  const at = new Date().toISOString();
+  for (const event of events) {
+    const previous = { gift: event.gift, cake: event.cake };
+    const roles = draw(
+      data.people,
+      event.person,
+      data.history,
+      random,
+      event.date,
+    );
+    event.gift = roles.gift;
+    event.cake = roles.cake;
+    event.fallback = roles.fallback;
+    event.tasks = event.tasks || {};
+    for (const role of ["gift", "cake"]) {
+      delete event.tasks[role + " complete"];
+      delete event.tasks[role === "gift" ? "Gift purchased" : "Cake arranged"];
+      const user = (roles as any)[role];
+      if (user)
+        data.history.push({
+          event: event.id,
+          user,
+          role,
+          person: event.person,
+          date: event.date,
+          at,
+          reason: "All upcoming organisers redrawn by admin",
+        });
+    }
+    event.audit = event.audit || [];
+    event.audit.push({
+      action: "all organisers reassigned",
+      previous,
+      next: { gift: event.gift, cake: event.cake },
+      at,
+    });
+  }
+  return events.length;
+}
 export function award(
   data: any,
   key: string,
@@ -226,7 +284,7 @@ export function runJobs(data: any, now = new Date()) {
         data,
         "created:" + e.id,
         e,
-        "A new birthday circle is open. Your ideas are welcome!",
+        "A new birthday bunch is open. Your ideas are welcome!",
       );
     }
   }
@@ -312,7 +370,7 @@ export function runJobs(data: any, now = new Date()) {
         data,
         "reminder:" + e.id,
         e,
-        "Voting closes soon. Add your voice to the circle.",
+        "Voting closes soon. Add your voice to the bunch.",
       );
     if (
       e.status !== "Completed" &&
@@ -328,8 +386,36 @@ export function runJobs(data: any, now = new Date()) {
   syncWishlistOptions(data, now);
   return data;
 }
-export function visible(data: any, user: string) {
-  const events = data.events.filter((e: any) => e.person !== user);
+/** A birthday's wishlist stays hidden for 7 days after its page opens, so the bunch suggests their own ideas first. */
+export function wishlistAvailableAt(event: any) {
+  const startsAt =
+    event.votingOpensAt ||
+    event.created ||
+    new Date(
+      Date.parse(event.date + "T00:00:00Z") - 30 * 86400000,
+    ).toISOString();
+  return new Date(Date.parse(startsAt) + 7 * 86400000).toISOString();
+}
+export function wishlistIsAvailable(event: any, now = new Date()) {
+  return (
+    !event.created || Date.parse(wishlistAvailableAt(event)) <= now.getTime()
+  );
+}
+export function visible(data: any, user: string, now = new Date()) {
+  const events = data.events
+    .filter((e: any) => e.person !== user)
+    .map((e: any) =>
+      wishlistIsAvailable(e, now)
+        ? e
+        : {
+            ...e,
+            options: (e.options || []).filter(
+              (o: any) => o.kind !== "wishlist",
+            ),
+            wishlistAvailableAt: wishlistAvailableAt(e),
+            wishlistHidden: true,
+          },
+    );
   const allowed = new Set(events.map((e: any) => e.id));
   return {
     ...data,

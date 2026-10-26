@@ -128,6 +128,40 @@ Open **http://localhost:5173**. The local site talks to your real Supabase proje
 
 ---
 
+## Starting over with a new bunch
+
+`npm run reset-bunch` removes every Banana except the admin, clears all birthdays, wishlists, points, calendar events and photos, then creates new Bananas from a CSV file. The admin account and bunch settings are kept. This can't be undone.
+
+1. Add the service role key to `.env.local` (dashboard: **Project Settings → API keys → `service_role`**). It bypasses all security, so never commit or share it:
+
+   ```
+   SUPABASE_SERVICE_ROLE_KEY=...
+   ```
+
+2. Make a CSV **outside this folder** (or anywhere; `*.csv` is ignored by git) with a header row. Birthdays are DD-MM, email is optional:
+
+   ```
+   name,username,birthday,email,password
+   Ben Banana,ben,20-11,ben@example.com,a-temporary-password
+   Cat Banana,cat,01-02,,another-temp-password
+   ```
+
+3. Dry run (changes nothing, shows what would happen):
+
+   ```bash
+   npm run reset-bunch -- path/to/users.csv
+   ```
+
+4. If it looks right, run it for real:
+
+   ```bash
+   npm run reset-bunch -- path/to/users.csv --confirm
+   ```
+
+Share each username and temporary password privately; Bananas can change their password in Settings. Delete the CSV afterwards, and remove the service role key from `.env.local` if you won't need it again.
+
+---
+
 ## Secrets
 
 Set these on the Edge Function with `npx supabase secrets set NAME=value`, or in the dashboard under **Edge Functions → Secrets**.

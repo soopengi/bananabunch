@@ -64,10 +64,22 @@ test("another participant may edit content, photo and link without replacing vot
   assert.equal(result.link, "https://example.test/item");
   assert.equal(e.audit[0].by, "bob");
 });
-test("birthday owner and closed voting cannot edit gift ideas", () => {
+test("birthday owner and chosen gifts cannot edit gift ideas", () => {
   const e = event();
   addSuggestion(e, { id: "idea", name: "Pottery", link: "" }, "alice");
   assert.throws(() => editSuggestion(e, "idea", { name: "No" }, "birthday"));
   e.status = "Gift selected";
+  e.final = "idea";
   assert.throws(() => editSuggestion(e, "idea", { name: "No" }, "bob"));
+});
+test("ideas can still be added after scheduled voting closes until a gift is chosen", () => {
+  const e = event();
+  e.status = "Decision needed";
+  e.deadline = "2020-01-01T00:00:00Z";
+  addSuggestion(
+    e,
+    { id: "late", name: "Late but useful", link: "", votes: [] },
+    "alice",
+  );
+  assert.equal(e.options[0].id, "late");
 });

@@ -5,9 +5,18 @@
 // Every request is { action, ...fields }. No action just loads the circle.
 // The response is the part of the circle the caller may see (see visible()).
 // The whole circle lives in one document, "group".
-import { loginEmail, validatePassword, validateUser } from "./accounts.ts";
+import {
+  loginEmail,
+  photoCrop,
+  validatePassword,
+  validateUser,
+} from "./accounts.ts";
 import { parseBirthday } from "./birthdays.ts";
-import { addCalendarEvent } from "./calendar-events.ts";
+import {
+  addCalendarEvent,
+  deleteCalendarEvent,
+  updateCalendarEvent,
+} from "./calendar-events.ts";
 import { newCircle, weights } from "./circle-data.ts";
 import {
   completeRole,
@@ -22,7 +31,14 @@ import {
   initializeRewards,
   pendingRewards,
 } from "./rewards.ts";
-import { award, notify, runJobs, visible } from "./rules.ts";
+import {
+  award,
+  notify,
+  reassignUpcomingOrganisers,
+  runJobs,
+  visible,
+  wishlistIsAvailable,
+} from "./rules.ts";
 import { deleteUser } from "./user-deletion.ts";
 import { votingOpen } from "./voting.ts";
 import { maintainWishlist } from "./wishlist-lifecycle.ts";
@@ -340,8 +356,11 @@ async function route(body: any, ctx: Context): Promise<Reply> {
             name: p.name,
             email: p.email || "",
             birthday: p.birthday,
+            description: p.description || "",
             admin: !!p.admin,
             disabled: !!p.disabled,
+            profilePhoto: p.profilePhoto || "",
+            profilePhotoCrop: p.profilePhotoCrop || null,
             createdAt: p.createdAt || null,
           })),
       },
@@ -350,23 +369,41 @@ async function route(body: any, ctx: Context): Promise<Reply> {
 
   const eventId = body.event;
 
-  // A photo attached to an idea or wish must be one this person uploaded
-  // for the same place.
-  if (
-    body.photo &&
-    ["suggest", "editSuggestion", "wishlist", "editWishlist"].includes(action)
-  ) {
+  // A photo attached to something must have been uploaded for that same
+  // place. `keep` is the photo already there, which may stay as it is.
+  const requireOwnPhoto = (id: any, owner: string, keep?: string) => {
+    if (!id || id === keep) return;
+    const photo = group.photos?.[String(id)];
+    if (!photo) throw new UserError("Please upload the photo again.");
+    if (photo.event || photo.owner !== owner)
+      throw new UserError("This photo is not one of your uploads.");
+  };
+  if (body.photo && (action === "suggest" || action === "editSuggestion")) {
     const photo = group.photos?.[String(body.photo)];
     if (!photo) throw new UserError("Please upload the photo again.");
-    if (action === "suggest" || action === "editSuggestion") {
-      if (!eventId || photo.event !== eventId)
-        throw new UserError("This photo belongs to a different event.");
-    } else if (photo.event || photo.owner !== uid)
-      throw new UserError("This photo is not in your wishlist uploads.");
+    if (!eventId || photo.event !== eventId)
+      throw new UserError("This photo belongs to a different event.");
+  }
+  if (["wishlist", "editWishlist", "addCalendarEvent"].includes(action))
+    requireOwnPhoto(body.photo, uid);
+  if (action === "updateCalendarEvent")
+    requireOwnPhoto(
+      body.photo,
+      uid,
+      (group.calendarEvents || []).find((c: any) => c.id === String(body.id))
+        ?.photo,
+    );
+  if (action === "profile")
+    requireOwnPhoto(body.profilePhoto, uid, me.profilePhoto);
+  if (action === "adminProfilePhoto") {
+    requireAdmin(me);
+    const target = group.people.find((p: any) => p.id === String(body.user));
+    requireOwnPhoto(body.profilePhoto, String(body.user), target?.profilePhoto);
   }
 
   // The profile form is saved as part of the normal update below.
-  const profile = action === "profile" ? validateProfile(body) : null;
+  const profile =
+    action === "profile" ? validateProfile(body, !!me.admin) : null;
   if (profile) action = "";
 
   const { circle, result } = await mutate(store, (d) => {
@@ -391,6 +428,10 @@ async function route(body: any, ctx: Context): Promise<Reply> {
         birthday: profile.birthday,
         description: profile.description,
       });
+      if (body.profilePhoto !== undefined) {
+        me.profilePhoto = String(body.profilePhoto || "");
+        me.profilePhotoCrop = photoCrop(body);
+      }
       if (profile.emailNotifications !== undefined)
         me.preferences = {
           ...me.preferences,
@@ -467,8 +508,8 @@ async function route(body: any, ctx: Context): Promise<Reply> {
           return undefined;
         }
 
+        // Ideas stay open after voting closes, until the gift is chosen.
         case "suggest": {
-          requireVotingOpen();
           addSuggestion(e, itemFromForm("suggestion"), uid);
           const daysOpen = (Date.now() - Date.parse(e.created)) / DAY_MS;
           award(
@@ -591,6 +632,74 @@ async function route(body: any, ctx: Context): Promise<Reply> {
             hiddenFrom: birthdayEvent?.person,
           });
           return undefined;
+        }
+
+        case "updateCalendarEvent":
+          updateCalendarEvent(d, uid, body, !!me.admin);
+          return undefined;
+
+        case "deleteCalendarEvent":
+          deleteCalendarEvent(d, uid, String(body.id), !!me.admin);
+          return undefined;
+
+        case "adminProfilePhoto": {
+          requireAdmin(me);
+          const member = d.people.find(
+            (p: any) => p.id === String(body.user) && isActive(p),
+          );
+          if (!member) throw new UserError("Choose an active Banana.");
+          member.profilePhoto = String(body.profilePhoto || "");
+          member.profilePhotoCrop = photoCrop(body);
+          return undefined;
+        }
+
+        // Admin edits another Banana's details. The username (their login)
+        // and their reminder settings stay as they are.
+        case "adminUpdateUser": {
+          requireAdmin(me);
+          const member = d.people.find(
+            (p: any) => p.id === String(body.user) && isActive(p),
+          );
+          if (!member) throw new UserError("Choose an active Banana.");
+          const fields = validateProfile(body, !!member.admin);
+          if (
+            fields.email &&
+            d.people.some(
+              (p: any) =>
+                p.id !== member.id &&
+                (p.email || "").toLowerCase() === fields.email,
+            )
+          )
+            throw new UserError("That email is already in use.");
+          const before = {
+            name: member.name,
+            email: member.email || "",
+            birthday: member.birthday,
+            description: member.description || "",
+          };
+          Object.assign(member, {
+            name: fields.name,
+            email: fields.email,
+            birthday: fields.birthday,
+            description: fields.description,
+          });
+          d.accountAudit = d.accountAudit || [];
+          d.accountAudit.push({
+            action: "details edited by admin",
+            user: member.id,
+            by: uid,
+            before,
+            at: new Date().toISOString(),
+          });
+          return { message: "Saved " + member.name + "’s details." };
+        }
+
+        case "reassignAllOrganisers": {
+          requireAdmin(me);
+          const count = reassignUpcomingOrganisers(d);
+          return {
+            message: `Reassigned organisers for ${count} upcoming birthday${count === 1 ? "" : "s"}.`,
+          };
         }
 
         case "complete":
@@ -727,7 +836,7 @@ async function route(body: any, ctx: Context): Promise<Reply> {
   return { status: 200, body: await viewFor(circle, uid, ctx, result) };
 }
 
-function validateProfile(body: any) {
+function validateProfile(body: any, isAdmin = false) {
   const name = String(body.name || "").trim();
   const email = String(body.email || "")
     .trim()
@@ -739,9 +848,13 @@ function validateProfile(body: any) {
     throw new UserError("Enter a valid email or leave it blank.");
   if (description.length > 500)
     throw new UserError("Keep your description under 500 characters.");
-  let birthday: string;
+  let birthday: string | null;
   try {
-    birthday = parseBirthday(String(body.birthday || ""));
+    // The admin isn't part of the organiser draw, so their birthday is optional.
+    birthday =
+      isAdmin && !String(body.birthday || "").trim()
+        ? null
+        : parseBirthday(String(body.birthday || ""));
   } catch (error: any) {
     throw new UserError(error.message);
   }
@@ -760,8 +873,20 @@ async function viewFor(circle: any, uid: string, ctx: Context, result: any) {
   const out: any = visible(circle, uid);
   out.events = out.events.map((e: any) => {
     const { messages: _messages, ...event } = e;
-    return { ...event, currentWishlist: currentEventWishlist(circle, e) };
+    return {
+      ...event,
+      currentWishlist: wishlistIsAvailable(e)
+        ? currentEventWishlist(circle, e)
+        : [],
+    };
   });
+  // While someone's birthday wishlist is still hidden, hide it everywhere.
+  const lockedOwners = new Set(
+    out.events.filter((e: any) => e.wishlistHidden).map((e: any) => e.person),
+  );
+  out.wishlist = (out.wishlist || []).filter(
+    (w: any) => !lockedOwners.has(w.owner),
+  );
   // Only admins see other members' email addresses.
   out.people = out.people.map((p: any) => {
     const { authEmail: _authEmail, sessionsValidAfter: _valid, ...person } = p;
@@ -777,6 +902,8 @@ async function viewFor(circle: any, uid: string, ctx: Context, result: any) {
     for (const w of e.currentWishlist || []) if (w.photo) ids.add(w.photo);
   }
   for (const w of out.wishlist || []) if (w.photo) ids.add(w.photo);
+  for (const p of out.people) if (p.profilePhoto) ids.add(p.profilePhoto);
+  for (const c of out.calendarEvents || []) if (c.photo) ids.add(c.photo);
   const allowed = [...ids]
     .map((id) => circle.photos?.[id])
     .filter((photo) => photo && canViewPhoto(circle, uid, photo));
@@ -794,6 +921,7 @@ async function viewFor(circle: any, uid: string, ctx: Context, result: any) {
     photoUrls,
     mascotUrl: urls[MASCOT_PATH] || "",
     result,
+    message: result?.message,
     rewards: pendingRewards(circle, uid),
     admin: isAdmin,
   };
@@ -916,11 +1044,15 @@ async function resetRequest(body: any, ctx: Context): Promise<Reply> {
   return reply;
 }
 
-/** Stores an uploaded photo. `event` ties it to a birthday (for gift ideas). */
+/**
+ * Stores an uploaded photo. `event` ties it to a birthday (for gift ideas).
+ * `target` lets an admin upload a profile picture for another Banana.
+ */
 export async function uploadPhoto(
   bytes: Uint8Array,
   eventId: string,
   ctx: Context,
+  target = "",
 ): Promise<Reply> {
   try {
     const group = await loadGroup(ctx.store);
@@ -940,6 +1072,11 @@ export async function uploadPhoto(
       !group.events.some((e: any) => e.id === eventId && e.person !== me.id)
     )
       return { status: 404, body: { error: "Event not found" } };
+    const owner = target || me.id;
+    if (owner !== me.id && !me.admin)
+      return { status: 403, body: { error: "Administrator access required." } };
+    if (!isActive(group.people.find((p: any) => p.id === owner)))
+      return { status: 400, body: { error: "Choose an active Banana." } };
     let type: string;
     try {
       type = photoType(bytes);
@@ -955,7 +1092,7 @@ export async function uploadPhoto(
         d.photos[id] = {
           id,
           path,
-          owner: me.id,
+          owner,
           event: eventId || null,
           type,
           size: bytes.length,

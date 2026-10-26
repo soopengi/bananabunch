@@ -1,4 +1,5 @@
 import { votingOpen } from "../supabase/functions/_shared/voting.ts";
+import { ideasOpen } from "../supabase/functions/_shared/ideas.ts";
 import {
   groupedPoints,
   birthdayOrder,
@@ -6,7 +7,7 @@ import {
 } from "../supabase/functions/_shared/presentation.ts";
 import { displayBirthday } from "../supabase/functions/_shared/birthdays.ts";
 import { callCircle, supabase } from "./supabase";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Gift,
   Cake,
@@ -22,13 +23,12 @@ import {
   Check,
   ChevronLeft,
   X,
-  ShieldCheck,
   Sparkles,
   Clock,
   ChevronRight,
-  LogOut,
   Camera,
   Pencil,
+  Shuffle,
 } from "lucide-react";
 const links: any = {
   Dashboard: LayoutDashboard,
@@ -36,7 +36,6 @@ const links: any = {
   "Past Birthdays": Clock,
   "My Wishlist": Heart,
   "The Banana Bunch": Users,
-  Settings,
 };
 export default function Home({
   initialPage = "Dashboard",
@@ -51,6 +50,9 @@ export default function Home({
     [budgetRole, BR] = useState("gift"),
     [editing, EDIT] = useState<any>(null),
     [photo, PHOTO] = useState(""),
+    [photoZoom, PHOTOZOOM] = useState(1),
+    [photoX, PHOTOX] = useState(50),
+    [photoY, PHOTOY] = useState(50),
     [uploading, UP] = useState(false),
     [wishOwner, WISHOWNER] = useState(""),
     [hiddenRewards, HIDE] = useState<string[]>([]),
@@ -59,9 +61,6 @@ export default function Home({
     ),
     [calendarMonth, CALMONTH] = useState(() => new Date().getMonth()),
     [calendarYear, CALYEAR] = useState(() => new Date().getFullYear());
-  // True only while a primary press both started and ended on the modal
-  // backdrop, so dragging into or out of the window doesn't close it.
-  const backdropPress = useRef(false);
   async function api(body?: any) {
     try {
       const { status, json: j } = await callCircle(body || {});
@@ -134,17 +133,33 @@ export default function Home({
       name: "Unassigned Banana",
       color: "#dbd3c9",
     };
-  const av = (id: string, small = false) => (
-    <span
-      className={"avatar " + (small ? "small" : "")}
-      style={{ background: person(id).color }}
-    >
-      {person(id)
-        .name.split(" ")
-        .map((s: string) => s[0])
-        .join("")}
-    </span>
-  );
+  const av = (id: string, small = false) => {
+    const p = person(id),
+      crop = p.profilePhotoCrop || { zoom: 1, x: 50, y: 50 },
+      url = p.profilePhoto && d.photoUrls?.[p.profilePhoto];
+    return (
+      <span
+        className={"avatar " + (small ? "small" : "")}
+        style={{ background: p.color }}
+      >
+        {url ? (
+          <img
+            src={url}
+            alt={p.name}
+            style={{
+              objectPosition: `${crop.x}% ${crop.y}%`,
+              transform: `scale(${crop.zoom || 1})`,
+            }}
+          />
+        ) : (
+          p.name
+            .split(" ")
+            .map((s: string) => s[0])
+            .join("")
+        )}
+      </span>
+    );
+  };
   const open = (id: string) => {
     E(id);
     P("Event");
@@ -198,6 +213,21 @@ export default function Home({
           .includes(o.id),
       )
     : [];
+  // A birthday's wishlist stays hidden for its first week (see rules.ts).
+  const wishlistWaitDays =
+    event?.wishlistHidden && event.wishlistAvailableAt
+      ? Math.max(
+          1,
+          Math.ceil(
+            (Date.parse(event.wishlistAvailableAt) - Date.now()) / 86400000,
+          ),
+        )
+      : 0;
+  const memberWishlistLocked = (id: string) =>
+    d.events.some(
+      (item: any) =>
+        item.person === id && item.date >= today && item.wishlistHidden,
+    );
   const budget = (role: string) =>
     new Intl.NumberFormat("en-AU", {
       style: "currency",
@@ -208,6 +238,20 @@ export default function Home({
     EDIT(item);
     PHOTO(item?.photo || "");
     M(label);
+  }
+  function profileModal() {
+    const p = person(d.user),
+      crop = p.profilePhotoCrop || {};
+    PHOTO(p.profilePhoto || "");
+    PHOTOZOOM(crop.zoom || 1);
+    PHOTOX(crop.x ?? 50);
+    PHOTOY(crop.y ?? 50);
+    M("Edit profile");
+  }
+  function addEventModal(prefill: any = null) {
+    EDIT(prefill);
+    PHOTO("");
+    M("Add event");
   }
   async function logout() {
     await supabase.auth.signOut();
@@ -275,6 +319,10 @@ export default function Home({
         action,
       )
         ? { id: editing?.id, photo }
+        : {}),
+      ...(action === "addCalendarEvent" ? { photo } : {}),
+      ...(action === "profile"
+        ? { profilePhoto: photo, photoZoom, photoX, photoY }
         : {}),
     });
     B(false);
@@ -348,9 +396,17 @@ export default function Home({
           M("Event details");
         }}
       >
-        <span className="calendar-event-icon">
-          <CalendarDays size={22} />
-        </span>
+        {item.photo && d.photoUrls?.[item.photo] ? (
+          <img
+            className="calendar-event-photo"
+            src={d.photoUrls[item.photo]}
+            alt=""
+          />
+        ) : (
+          <span className="calendar-event-icon">
+            <CalendarDays size={22} />
+          </span>
+        )}
         <div className="event-info">
           <h3>{item.title}</h3>
           <p>
@@ -417,7 +473,7 @@ export default function Home({
               {o.votes.includes(d.user) ? "Loved" : "Love this"}
             </button>
           </div>
-          {o.kind === "suggestion" && votingOpen(event) && (
+          {o.kind === "suggestion" && ideasOpen(event) && (
             <button
               className="edit-idea text-btn"
               onClick={() => ideaModal("Edit gift idea", o)}
@@ -527,11 +583,11 @@ export default function Home({
           </p>
           <i>🍌</i>
         </div>
-        <button className="account" onClick={() => P("My profile")}>
+        <button className="account" onClick={() => P("Settings")}>
           {av(d.user, true)}
           <span>
             {person(d.user).name}
-            <small>Your place in the bunch</small>
+            <small>Settings &amp; account</small>
           </span>
           <Settings size={15} />
         </button>
@@ -549,13 +605,6 @@ export default function Home({
             </b>
           </div>
           <div>
-            <span className="private">
-              <ShieldCheck size={14} /> Just between Bananas
-            </span>
-            <button className="logout-button" onClick={logout}>
-              <LogOut size={16} />
-              <span>Log out</span>
-            </button>
             <button
               aria-label="Notifications"
               onClick={() => M("Notifications")}
@@ -564,7 +613,7 @@ export default function Home({
               <Bell size={20} />
               <i />
             </button>
-            <button aria-label="Your profile" onClick={() => M("Edit profile")}>
+            <button aria-label="Your profile" onClick={() => P("My profile")}>
               {av(d.user, true)}
             </button>
           </div>
@@ -672,13 +721,7 @@ export default function Home({
                     <CalendarDays size={16} /> Calendar view
                   </button>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    EDIT(null);
-                    M("Add event");
-                  }}
-                >
+                <button className="primary" onClick={() => addEventModal()}>
                   <Plus size={16} /> Add event
                 </button>
               </div>
@@ -904,10 +947,9 @@ export default function Home({
                 </button>
                 <button
                   className="primary"
-                  onClick={() => {
-                    EDIT({ birthdayEvent: eid, date: event.date });
-                    M("Add event");
-                  }}
+                  onClick={() =>
+                    addEventModal({ birthdayEvent: eid, date: event.date })
+                  }
                 >
                   <Plus size={16} /> Add event
                 </button>
@@ -1017,19 +1059,11 @@ export default function Home({
               )}
               <div className="section-title">
                 <h2>Fresh picks from the bunch</h2>
-                {votingOpen(event) && (
-                  <button
-                    className="primary"
-                    onClick={() => ideaModal("Add a gift idea")}
-                  >
-                    <Plus size={16} /> Suggest a gift
-                  </button>
-                )}
               </div>
               <p className="subtitle">
                 Help your bunch pick a winner. One vote per idea, with room to
-                change your mind. Any participant can edit a gift idea while
-                voting is open.
+                change your mind. Anyone can add or edit gift ideas until the
+                gift is chosen.
               </p>
               <div className="gift-grid">
                 {event.options
@@ -1037,24 +1071,44 @@ export default function Home({
                   .map((o: any) => (
                     <Option key={o.id} o={o} />
                   ))}
-              </div>
-              <h2 className="spaced">Their Wishlist ♡</h2>
-              {!eventWishes(event, today).length && (
-                <p className="subtitle">No wishes in this bunch yet.</p>
-              )}
-              <div className="gift-grid">
-                {eventWishes(event, today).map((w: any) =>
-                  w.votable ? (
-                    <Option key={w.id} o={w} />
-                  ) : (
-                    <WishPreview key={w.id} w={w} />
-                  ),
+                {ideasOpen(event) && (
+                  <button
+                    className="add-gift-tile"
+                    onClick={() => ideaModal("Add a gift idea")}
+                  >
+                    <Plus size={46} />
+                    <span>Add a gift idea</span>
+                  </button>
                 )}
               </div>
-              <div className="spaced privacy-banner">
-                <ShieldCheck size={16} /> Keep this banana under its peel. Share
-                details privately with participants, never the birthday Banana.
-              </div>
+              <h2 className="spaced">Their Wishlist ♡</h2>
+              {event.wishlistHidden ? (
+                <div className="wishlist-locked">
+                  <Heart size={22} />
+                  <div>
+                    <b>Their wishlist is still under its peel.</b>
+                    <p>
+                      Wishlist items become available in {wishlistWaitDays} day
+                      {wishlistWaitDays === 1 ? "" : "s"}.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {!eventWishes(event, today).length && (
+                    <p className="subtitle">No wishes in this bunch yet.</p>
+                  )}
+                  <div className="gift-grid">
+                    {eventWishes(event, today).map((w: any) =>
+                      w.votable ? (
+                        <Option key={w.id} o={w} />
+                      ) : (
+                        <WishPreview key={w.id} w={w} />
+                      ),
+                    )}
+                  </div>
+                </>
+              )}
               {["Voting open", "Decision needed"].includes(event.status) &&
                 event.gift === d.user && (
                   <div className="settings-panel choice-panel">
@@ -1294,43 +1348,60 @@ export default function Home({
                 {d.people
                   .filter((p: any) => !p.admin && !p.disabled)
                   .sort(birthdayOrder)
-                  .map((p: any) => (
-                    <article className="person-card" key={p.id}>
-                      {av(p.id)}
-                      <h2>{p.name}</h2>
-                      <p>{p.description}</p>
-                      <small>
-                        Birthday · {displayBirthday(p.birthday) || "Not set"}
-                      </small>
-                      <div className="rating">
-                        <Sparkles size={15} /> Banana Points ·{" "}
-                        {d.ledger
-                          .filter((l: any) => l.user === p.id)
-                          .reduce((sum: number, l: any) => sum + l.points, 0)}
-                      </div>
-                      <details className="subtitle">
-                        <summary>How this Banana earned it</summary>
-                        {groupedPoints(d.ledger, p.id).map((l: any) => (
-                          <div className="point-reason" key={l.reason}>
-                            <span>{l.reason}</span>
-                            <b>
-                              {l.points > 0 ? "+" : ""}
-                              {l.points}
-                            </b>
-                          </div>
-                        ))}
-                      </details>
-                      <button
-                        className="outline member-wishlist-button"
-                        onClick={() => {
-                          WISHOWNER(p.id);
-                          P("Member Wishlist");
-                        }}
+                  .map((p: any) => {
+                    const locked = memberWishlistLocked(p.id);
+                    return (
+                      <article
+                        className={
+                          "person-card " +
+                          (locked ? "wishlist-card-locked" : "")
+                        }
+                        key={p.id}
                       >
-                        <Heart size={14} /> View Wishlist
-                      </button>
-                    </article>
-                  ))}
+                        {av(p.id)}
+                        <h2>{p.name}</h2>
+                        <p>{p.description}</p>
+                        <small>
+                          Birthday · {displayBirthday(p.birthday) || "Not set"}
+                        </small>
+                        <div className="rating">
+                          <Sparkles size={15} /> Banana Points ·{" "}
+                          {d.ledger
+                            .filter((l: any) => l.user === p.id)
+                            .reduce((sum: number, l: any) => sum + l.points, 0)}
+                        </div>
+                        <details className="subtitle">
+                          <summary>How this Banana earned it</summary>
+                          {groupedPoints(d.ledger, p.id).map((l: any) => (
+                            <div className="point-reason" key={l.reason}>
+                              <span>{l.reason}</span>
+                              <b>
+                                {l.points > 0 ? "+" : ""}
+                                {l.points}
+                              </b>
+                            </div>
+                          ))}
+                        </details>
+                        <button
+                          className="outline member-wishlist-button"
+                          disabled={locked}
+                          onClick={() => {
+                            WISHOWNER(p.id);
+                            P("Member Wishlist");
+                          }}
+                        >
+                          <Heart size={14} />{" "}
+                          {locked ? "Wishlist locked" : "View Wishlist"}
+                        </button>
+                        {locked && (
+                          <small className="wishlist-lock-note">
+                            Available seven days after their birthday page
+                            opens.
+                          </small>
+                        )}
+                      </article>
+                    );
+                  })}
               </div>
             </>
           )}
@@ -1369,9 +1440,14 @@ export default function Home({
               <div className="eyebrow">YOUR PATCH OF THE BUNCH</div>
               <div className="heading-row">
                 <h1>My profile</h1>
-                <button className="outline" onClick={() => M("Edit profile")}>
-                  Edit profile
-                </button>
+                <div className="profile-actions">
+                  <button className="outline" onClick={profileModal}>
+                    Edit profile
+                  </button>
+                  <button className="outline" onClick={logout}>
+                    Log out
+                  </button>
+                </div>
               </div>
               <section className="profile-panel">
                 {av(d.user)}
@@ -1455,41 +1531,30 @@ export default function Home({
                     "."}
                 </p>
                 <div className="account-actions">
-                  {
-                    <>
-                      <button
-                        className="primary"
-                        onClick={() => M("Edit profile")}
-                      >
-                        <Pencil size={15} /> Edit profile
-                      </button>
-                      <button
-                        className="outline"
-                        onClick={() => P("My profile")}
-                      >
-                        Your place in the bunch
-                      </button>
-                      <button className="outline" onClick={logout}>
-                        Log out
-                      </button>
-                    </>
-                  }
+                  <button className="primary" onClick={profileModal}>
+                    <Pencil size={15} /> Edit profile
+                  </button>
+                  <button className="outline" onClick={() => P("My profile")}>
+                    Your place in the bunch
+                  </button>
                 </div>
-                {
-                  <div className="account-actions">
-                    <button
-                      className="primary"
-                      onClick={() => M("Change password")}
-                    >
-                      Change my password
-                    </button>
-                  </div>
-                }
+                <div className="account-actions">
+                  <button
+                    className="primary"
+                    onClick={() => M("Change password")}
+                  >
+                    Change my password
+                  </button>
+                </div>
               </section>
             </>
           )}
           {page === "Users" && d.admin && (
-            <UsersPanel api={api} currentUser={d.user} />
+            <UsersPanel
+              api={api}
+              currentUser={d.user}
+              urlFor={(id) => d.photoUrls?.[id]}
+            />
           )}
           <footer>
             <span>
@@ -1562,39 +1627,42 @@ export default function Home({
         </div>
       )}
       {modal && (
-        <div
-          className="modal-backdrop"
-          onPointerDown={(e) => {
-            backdropPress.current =
-              e.button === 0 && e.target === e.currentTarget;
-          }}
-          onPointerUp={(e) => {
-            if (e.target !== e.currentTarget) backdropPress.current = false;
-          }}
-          onClick={(e) => {
-            if (backdropPress.current && e.target === e.currentTarget) M("");
-            backdropPress.current = false;
-          }}
-        >
+        // Clicking outside a pop-up doesn't close it, so drafts aren't lost.
+        <div className="modal-backdrop">
           <section
             role="dialog"
             aria-modal="true"
             aria-label={modal}
             className="modal"
           >
-            <button
-              className="modal-close"
-              aria-label="Close"
-              onClick={() => M("")}
-            >
-              <X size={20} />
-            </button>
+            {modal !== "Organiser raffle" && (
+              <button
+                className="modal-close"
+                aria-label="Close"
+                onClick={() => M("")}
+              >
+                <X size={20} />
+              </button>
+            )}
             <div className="modal-icon">
               <Gift />
             </div>
             <h2>{modal}</h2>
             {modal === "Event details" ? (
-              <EventDetails item={editing} person={person} />
+              <EventDetails
+                item={editing}
+                person={person}
+                canEdit={d.admin || editing?.createdBy === d.user}
+                urlFor={(id) => d.photoUrls?.[id]}
+                api={api}
+                onBusy={UP}
+                onError={ERR}
+                onDone={(message) => {
+                  M("");
+                  EDIT(null);
+                  N(message);
+                }}
+              />
             ) : modal === "Organiser raffle" ? (
               <OrganiserReveal
                 key={eid}
@@ -1684,6 +1752,13 @@ export default function Home({
                         placeholder="What should the bunch know?"
                       />
                     </label>
+                    <PhotoUpload
+                      value={photo}
+                      onChange={PHOTO}
+                      urlFor={(id) => d.photoUrls?.[id]}
+                      onBusy={UP}
+                      onError={ERR}
+                    />
                   </>
                 ) : modal === "Choose cake" ? (
                   <>
@@ -1926,6 +2001,21 @@ export default function Home({
                   </>
                 ) : (
                   <>
+                    {modal === "Edit profile" && (
+                      <ProfilePhotoEditor
+                        value={photo}
+                        onChange={PHOTO}
+                        zoom={photoZoom}
+                        setZoom={PHOTOZOOM}
+                        x={photoX}
+                        setX={PHOTOX}
+                        y={photoY}
+                        setY={PHOTOY}
+                        urlFor={(id) => d.photoUrls?.[id]}
+                        onBusy={UP}
+                        onError={ERR}
+                      />
+                    )}
                     <p>
                       {modal === "Edit profile"
                         ? "A little about the Banana behind those thoughtful gifts."
@@ -1956,7 +2046,7 @@ export default function Home({
                             pattern="[0-9]{2}-[0-9]{2}"
                             maxLength={5}
                             inputMode="numeric"
-                            required
+                            required={!d.admin}
                           />
                         </label>
                         <label>
@@ -2068,13 +2158,120 @@ export default function Home({
 function EventDetails({
   item,
   person,
+  canEdit,
+  urlFor,
+  api,
+  onBusy,
+  onError,
+  onDone,
 }: {
   item: any;
   person: (id: string) => any;
+  canEdit: boolean;
+  urlFor: (id: string) => string | undefined;
+  api: (body: any) => Promise<any>;
+  onBusy: (v: boolean) => void;
+  onError: (v: string) => void;
+  onDone: (message: string) => void;
 }) {
+  const [editing, EDITING] = useState(false),
+    [photo, PHOTO] = useState(item?.photo || ""),
+    [uploading, UPLOADING] = useState(false),
+    [busy, B] = useState(false);
   if (!item) return null;
+  async function save(e: any) {
+    e.preventDefault();
+    if (uploading) return;
+    B(true);
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const r = await api({
+      action: "updateCalendarEvent",
+      id: item.id,
+      ...values,
+      photo,
+    });
+    B(false);
+    if (r) onDone("Event updated.");
+  }
+  async function remove() {
+    if (!window.confirm("Delete this event from the Banana Bunch calendar?"))
+      return;
+    B(true);
+    const r = await api({ action: "deleteCalendarEvent", id: item.id });
+    B(false);
+    if (r) onDone("Event deleted.");
+  }
+  if (editing)
+    return (
+      <section className="calendar-event-details">
+        <form onSubmit={save}>
+          <label>
+            Title
+            <input
+              name="title"
+              required
+              minLength={3}
+              maxLength={120}
+              defaultValue={item.title}
+            />
+          </label>
+          <label>
+            Date
+            <input name="date" type="date" required defaultValue={item.date} />
+          </label>
+          <label>
+            Time (optional)
+            <input name="time" type="time" defaultValue={item.time || ""} />
+          </label>
+          <label>
+            Location (optional)
+            <input
+              name="location"
+              maxLength={180}
+              defaultValue={item.location || ""}
+            />
+          </label>
+          <label>
+            Description (optional)
+            <textarea
+              name="description"
+              maxLength={1000}
+              defaultValue={item.description || ""}
+            />
+          </label>
+          <PhotoUpload
+            value={photo}
+            onChange={PHOTO}
+            urlFor={urlFor}
+            onBusy={(v) => {
+              UPLOADING(v);
+              onBusy(v);
+            }}
+            onError={onError}
+          />
+          <div className="event-detail-actions">
+            <button
+              className="primary"
+              disabled={busy || uploading}
+              type="submit"
+            >
+              {uploading ? "Uploading photo…" : busy ? "Saving…" : "Save event"}
+            </button>
+            <button
+              className="outline"
+              type="button"
+              onClick={() => EDITING(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </section>
+    );
+  const photoUrl = item.photo && urlFor(item.photo);
   return (
     <section className="calendar-event-details">
+      {photoUrl && <img className="event-detail-photo" src={photoUrl} alt="" />}
       <p className="event-detail-date">
         {new Date(item.date + "T00:00:00Z").toLocaleDateString("en-AU", {
           weekday: "long",
@@ -2099,23 +2296,116 @@ function EventDetails({
         </p>
       )}
       <small>Added by {person(item.createdBy).name}</small>
+      <div className="event-detail-actions">
+        <a
+          className="primary"
+          href={googleCalendarUrl(item)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <CalendarDays size={15} /> Add to Google Calendar
+        </a>
+        {canEdit && (
+          <>
+            <button className="outline" onClick={() => EDITING(true)}>
+              <Pencil size={14} /> Edit event
+            </button>
+            <button
+              className="outline delete-event"
+              disabled={busy}
+              onClick={remove}
+            >
+              Delete event
+            </button>
+          </>
+        )}
+      </div>
     </section>
   );
+}
+
+/** A link that opens Google Calendar with this event filled in. */
+function googleCalendarUrl(item: any) {
+  const compact = (date: string) => date.replaceAll("-", "");
+  const nextDay = (date: string) =>
+    new Date(Date.parse(date + "T00:00:00Z") + 86400000)
+      .toISOString()
+      .slice(0, 10);
+  let dates: string;
+  if (item.time) {
+    // Timed events default to one hour long.
+    const [hour, minute] = item.time.split(":").map(Number);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const endDate = hour === 23 ? nextDay(item.date) : item.date;
+    dates = `${compact(item.date)}T${pad(hour)}${pad(minute)}00/${compact(endDate)}T${pad((hour + 1) % 24)}${pad(minute)}00`;
+  } else dates = `${compact(item.date)}/${compact(nextDay(item.date))}`;
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: item.title,
+    dates,
+    details: item.description || "",
+    location: item.location || "",
+  });
+  return "https://calendar.google.com/calendar/render?" + params.toString();
 }
 
 function UsersPanel({
   api,
   currentUser,
+  urlFor,
 }: {
   api: (body: any) => Promise<any>;
   currentUser: string;
+  urlFor: (id: string) => string | undefined;
 }) {
   const [users, U] = useState<any[]>([]),
     [error, E] = useState(""),
     [message, M] = useState(""),
     [busy, B] = useState(false),
     [resetUser, RESET] = useState<any>(null),
-    [deleteTarget, DELETE] = useState<any>(null);
+    [deleteTarget, DELETE] = useState<any>(null),
+    [editUser, EDITUSER] = useState<any>(null),
+    [reassigning, REASSIGNING] = useState(false);
+  // Only one of the edit / reset / delete forms is open at a time.
+  function openForm(kind: "edit" | "reset" | "delete" | null, u: any = null) {
+    EDITUSER(kind === "edit" ? u : null);
+    RESET(kind === "reset" ? u : null);
+    DELETE(kind === "delete" ? u : null);
+    E("");
+    M("");
+  }
+  async function saveDetails(e: any) {
+    e.preventDefault();
+    B(true);
+    E("");
+    M("");
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const r = await api({
+      action: "adminUpdateUser",
+      user: editUser.id,
+      ...values,
+    });
+    B(false);
+    if (r) {
+      EDITUSER(null);
+      M(r.message);
+      await refresh();
+    }
+  }
+  async function reassignAll() {
+    if (
+      !window.confirm(
+        "Reassign the gift and cake organisers for every upcoming birthday? Birthdays where the gift is already chosen or purchased keep their organisers.",
+      )
+    )
+      return;
+    REASSIGNING(true);
+    M("");
+    const r = await api({ action: "reassignAllOrganisers" });
+    REASSIGNING(false);
+    if (r)
+      M(r.message || "All upcoming birthday organisers have been reassigned.");
+  }
   async function remove() {
     B(true);
     M("");
@@ -2180,12 +2470,24 @@ function UsersPanel({
   }
   return (
     <>
-      <div className="eyebrow">ADMINISTRATION</div>
-      <h1>The Bananas</h1>
-      <p className="subtitle">
-        Add fresh Bananas to your bunch. Each Banana can change their own
-        password in Settings.
-      </p>
+      <div className="heading-row">
+        <div>
+          <div className="eyebrow">ADMINISTRATION</div>
+          <h1>The Bananas</h1>
+          <p className="subtitle">
+            Add fresh Bananas to your bunch. Each Banana can change their own
+            password in Settings.
+          </p>
+        </div>
+        <button
+          className="outline"
+          disabled={reassigning}
+          onClick={reassignAll}
+        >
+          <Shuffle size={16} />{" "}
+          {reassigning ? "Reassigning…" : "Reassign all upcoming organisers"}
+        </button>
+      </div>
       <div className="user-admin-grid">
         <section className="settings-panel">
           <h2>Add a Banana</h2>
@@ -2297,24 +2599,30 @@ function UsersPanel({
                       </span>
                     </td>
                     <td>
+                      <AdminPhotoControl
+                        user={u}
+                        api={api}
+                        urlFor={urlFor}
+                        onSaved={refresh}
+                      />
                       <button
                         className="text-btn"
                         disabled={u.disabled}
-                        onClick={() => {
-                          RESET(u);
-                          M("");
-                        }}
+                        onClick={() => openForm("edit", u)}
+                      >
+                        Edit details
+                      </button>
+                      <button
+                        className="text-btn"
+                        disabled={u.disabled}
+                        onClick={() => openForm("reset", u)}
                       >
                         Reset password
                       </button>
                       <button
                         className="text-btn delete-user"
                         disabled={u.id === currentUser || busy}
-                        onClick={() => {
-                          DELETE(u);
-                          RESET(null);
-                          M("");
-                        }}
+                        onClick={() => openForm("delete", u)}
                       >
                         Delete user
                       </button>
@@ -2345,6 +2653,74 @@ function UsersPanel({
                 </button>
               </div>
             </section>
+          )}
+          {editUser && (
+            <form
+              className="admin-reset"
+              key={editUser.id}
+              onSubmit={saveDetails}
+            >
+              <h3>Edit details for @{editUser.username}</h3>
+              <p className="subtitle">
+                Their username and password stay the same.
+              </p>
+              <label>
+                Name
+                <input
+                  name="name"
+                  required
+                  minLength={2}
+                  maxLength={80}
+                  defaultValue={editUser.name}
+                />
+              </label>
+              <label>
+                Birthday (DD-MM)
+                <input
+                  name="birthday"
+                  defaultValue={displayBirthday(editUser.birthday)}
+                  placeholder="08-11"
+                  pattern="[0-9]{2}-[0-9]{2}"
+                  maxLength={5}
+                  inputMode="numeric"
+                  required={!editUser.admin}
+                />
+              </label>
+              <label>
+                Email (optional, for recovery)
+                <input
+                  name="email"
+                  type="email"
+                  maxLength={254}
+                  defaultValue={editUser.email}
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  name="description"
+                  maxLength={500}
+                  defaultValue={editUser.description}
+                />
+              </label>
+              {error && (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <div className="account-actions">
+                <button className="primary" disabled={busy} type="submit">
+                  {busy ? "Saving…" : "Save details"}
+                </button>
+                <button
+                  type="button"
+                  className="outline"
+                  onClick={() => EDITUSER(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           )}
           {resetUser && (
             <form className="admin-reset" onSubmit={reset}>
@@ -2470,6 +2846,209 @@ function PhotoUpload({
           >
             Remove photo
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Upload a profile picture, then zoom and position it inside the circle. */
+function ProfilePhotoEditor({
+  value,
+  onChange,
+  zoom,
+  setZoom,
+  x,
+  setX,
+  y,
+  setY,
+  urlFor,
+  onBusy,
+  onError,
+  target,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  zoom: number;
+  setZoom: (v: number) => void;
+  x: number;
+  setX: (v: number) => void;
+  y: number;
+  setY: (v: number) => void;
+  urlFor: (id: string) => string | undefined;
+  onBusy: (v: boolean) => void;
+  onError: (v: string) => void;
+  /** Whose picture this is, when an admin sets someone else's. */
+  target?: string;
+}) {
+  const [busy, B] = useState(false),
+    [preview, PREVIEW] = useState("");
+  async function upload(e: any) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      onError("Choose a photo smaller than 4 MB.");
+      e.target.value = "";
+      return;
+    }
+    B(true);
+    onBusy(true);
+    onError("");
+    try {
+      const form = new FormData();
+      form.append("photo", file);
+      if (target) form.append("target", target);
+      const { status, json: data } = await callCircle(form);
+      if (status >= 400) throw Error(data.error);
+      PREVIEW(data.url);
+      onChange(data.id);
+      setZoom(1);
+      setX(50);
+      setY(50);
+    } catch (error: any) {
+      onError(error.message || "The profile picture could not be uploaded.");
+    } finally {
+      B(false);
+      onBusy(false);
+      e.target.value = "";
+    }
+  }
+  const url = value && (preview || urlFor(value));
+  return (
+    <section className="profile-photo-editor">
+      <label className="profile-photo-picker" title="Choose a profile picture">
+        <span className="avatar profile-photo-large">
+          {url ? (
+            <img
+              src={url}
+              alt="Profile preview"
+              style={{
+                objectPosition: `${x}% ${y}%`,
+                transform: `scale(${zoom})`,
+              }}
+            />
+          ) : (
+            <Camera size={28} />
+          )}
+        </span>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={upload}
+          disabled={busy}
+        />
+        <small>
+          {busy ? "Uploading…" : "Click the circle to choose a picture"}
+        </small>
+      </label>
+      {value && (
+        <div className="profile-crop-controls">
+          <label>
+            Zoom
+            <input
+              type="range"
+              min="1"
+              max="3"
+              step="0.05"
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Left / right
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={x}
+              onChange={(e) => setX(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Up / down
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={y}
+              onChange={(e) => setY(Number(e.target.value))}
+            />
+          </label>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Admin control for setting another Banana's profile picture. */
+function AdminPhotoControl({
+  user,
+  api,
+  urlFor,
+  onSaved,
+}: {
+  user: any;
+  api: (body: any) => Promise<any>;
+  urlFor: (id: string) => string | undefined;
+  onSaved: () => Promise<void>;
+}) {
+  const [open, OPEN] = useState(false),
+    [photo, PHOTO] = useState(user.profilePhoto || ""),
+    [zoom, ZOOM] = useState(user.profilePhotoCrop?.zoom || 1),
+    [x, X] = useState(user.profilePhotoCrop?.x ?? 50),
+    [y, Y] = useState(user.profilePhotoCrop?.y ?? 50),
+    [busy, B] = useState(false),
+    [error, E] = useState("");
+  async function save() {
+    B(true);
+    const r = await api({
+      action: "adminProfilePhoto",
+      user: user.id,
+      profilePhoto: photo,
+      photoZoom: zoom,
+      photoX: x,
+      photoY: y,
+    });
+    B(false);
+    if (r) {
+      OPEN(false);
+      await onSaved();
+    }
+  }
+  return (
+    <div className="admin-photo-control">
+      <button
+        className="text-btn"
+        disabled={user.disabled}
+        onClick={() => OPEN((v) => !v)}
+      >
+        Profile picture
+      </button>
+      {open && (
+        <div className="admin-photo-popover">
+          <ProfilePhotoEditor
+            value={photo}
+            onChange={PHOTO}
+            zoom={zoom}
+            setZoom={ZOOM}
+            x={x}
+            setX={X}
+            y={y}
+            setY={Y}
+            urlFor={urlFor}
+            onBusy={B}
+            onError={E}
+            target={user.id}
+          />
+          {error && <p className="form-error">{error}</p>}
+          <div className="account-actions">
+            <button className="primary" disabled={busy} onClick={save}>
+              Save picture
+            </button>
+            <button className="outline" onClick={() => OPEN(false)}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>

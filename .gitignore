@@ -8,6 +8,8 @@
 # Local secrets
 .env*
 *.pem
+# User lists for scripts/reset-bunch.mjs (they contain passwords)
+*.csv
 
 # Logs and OS files
 npm-debug.log*
