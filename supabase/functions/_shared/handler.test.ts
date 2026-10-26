@@ -581,6 +581,27 @@ test("profile pictures: members set their own, admins can set anyone's", async (
   const ben = saved.body.people.find((x: any) => x.id === "id-ben");
   assert.equal(ben.profilePhoto, mine.body.id);
   assert.deepEqual(ben.profilePhotoCrop, { zoom: 2, x: 0, y: 100 });
+  // Setting a picture earns 2 Banana Points, once.
+  const pictureRewards = () =>
+    p.store.rows.get("group")
+      ? JSON.parse(p.store.rows.get("group")!.data).ledger.filter(
+          (l: any) => l.key === "picture:id-ben",
+        )
+      : [];
+  assert.deepEqual(
+    saved.body.rewards.map((r: any) => [r.reason, r.points]),
+    [["Profile picture", 2]],
+  );
+  await handle(
+    {
+      action: "profile",
+      name: "Ben Banana",
+      birthday: "20-11",
+      profilePhoto: mine.body.id,
+    },
+    p.as("ben"),
+  );
+  assert.equal(pictureRewards().length, 1);
   // Everyone in the bunch gets a link to it.
   const cat = await handle({}, p.as("cat"));
   assert.ok(cat.body.photoUrls[mine.body.id]);

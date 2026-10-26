@@ -148,6 +148,7 @@ export default function Home({
             alt={p.name}
             style={{
               objectPosition: `${crop.x}% ${crop.y}%`,
+              transformOrigin: `${crop.x}% ${crop.y}%`,
               transform: `scale(${crop.zoom || 1})`,
             }}
           />
@@ -224,10 +225,7 @@ export default function Home({
         )
       : 0;
   const memberWishlistLocked = (id: string) =>
-    d.events.some(
-      (item: any) =>
-        item.person === id && item.date >= today && item.wishlistHidden,
-    );
+    d.events.some((item: any) => item.person === id && item.wishlistHidden);
   const budget = (role: string) =>
     new Intl.NumberFormat("en-AU", {
       style: "currency",
@@ -1635,7 +1633,8 @@ export default function Home({
             aria-label={modal}
             className="modal"
           >
-            {modal !== "Organiser raffle" && (
+            {(modal !== "Organiser raffle" ||
+              (event?.revealedTo || []).includes(d.user)) && (
               <button
                 className="modal-close"
                 aria-label="Close"
@@ -1670,8 +1669,9 @@ export default function Home({
                 people={d.people}
                 history={d.history}
                 onDone={async () => {
-                  const r = await api({ action: "revealSeen", event: eid });
-                  if (r) M("");
+                  // Close it even if saving fails; it just plays again next time.
+                  await api({ action: "revealSeen", event: eid });
+                  M("");
                 }}
               />
             ) : modal === "Notifications" ? (
@@ -2260,7 +2260,10 @@ function EventDetails({
             <button
               className="outline"
               type="button"
-              onClick={() => EDITING(false)}
+              onClick={() => {
+                PHOTO(item.photo || "");
+                EDITING(false);
+              }}
             >
               Cancel
             </button>
@@ -2365,9 +2368,14 @@ function UsersPanel({
     [resetUser, RESET] = useState<any>(null),
     [deleteTarget, DELETE] = useState<any>(null),
     [editUser, EDITUSER] = useState<any>(null),
+    [photoUser, PHOTOUSER] = useState<any>(null),
     [reassigning, REASSIGNING] = useState(false);
-  // Only one of the edit / reset / delete forms is open at a time.
-  function openForm(kind: "edit" | "reset" | "delete" | null, u: any = null) {
+  // Only one of the photo / edit / reset / delete forms is open at a time.
+  function openForm(
+    kind: "photo" | "edit" | "reset" | "delete" | null,
+    u: any = null,
+  ) {
+    PHOTOUSER(kind === "photo" ? u : null);
     EDITUSER(kind === "edit" ? u : null);
     RESET(kind === "reset" ? u : null);
     DELETE(kind === "delete" ? u : null);
@@ -2479,14 +2487,16 @@ function UsersPanel({
             password in Settings.
           </p>
         </div>
-        <button
-          className="outline"
-          disabled={reassigning}
-          onClick={reassignAll}
-        >
-          <Shuffle size={16} />{" "}
-          {reassigning ? "Reassigning…" : "Reassign all upcoming organisers"}
-        </button>
+        <div className="heading-actions">
+          <button
+            className="outline"
+            disabled={reassigning}
+            onClick={reassignAll}
+          >
+            <Shuffle size={16} />{" "}
+            {reassigning ? "Reassigning…" : "Reassign all upcoming organisers"}
+          </button>
+        </div>
       </div>
       <div className="user-admin-grid">
         <section className="settings-panel">
@@ -2599,12 +2609,13 @@ function UsersPanel({
                       </span>
                     </td>
                     <td>
-                      <AdminPhotoControl
-                        user={u}
-                        api={api}
-                        urlFor={urlFor}
-                        onSaved={refresh}
-                      />
+                      <button
+                        className="text-btn"
+                        disabled={u.disabled}
+                        onClick={() => openForm("photo", u)}
+                      >
+                        Profile picture
+                      </button>
                       <button
                         className="text-btn"
                         disabled={u.disabled}
@@ -2653,6 +2664,21 @@ function UsersPanel({
                 </button>
               </div>
             </section>
+          )}
+          {photoUser && (
+            <AdminPhotoForm
+              key={photoUser.id}
+              user={photoUser}
+              api={api}
+              urlFor={urlFor}
+              onClose={async (saved) => {
+                PHOTOUSER(null);
+                if (saved) {
+                  M("Saved " + photoUser.name + "’s profile picture.");
+                  await refresh();
+                }
+              }}
+            />
           )}
           {editUser && (
             <form
@@ -2924,6 +2950,7 @@ function ProfilePhotoEditor({
               alt="Profile preview"
               style={{
                 objectPosition: `${x}% ${y}%`,
+                transformOrigin: `${x}% ${y}%`,
                 transform: `scale(${zoom})`,
               }}
             />
@@ -2974,26 +3001,39 @@ function ProfilePhotoEditor({
               onChange={(e) => setY(Number(e.target.value))}
             />
           </label>
+          <button
+            type="button"
+            className="text-btn"
+            disabled={busy}
+            onClick={() => {
+              onChange("");
+              PREVIEW("");
+              setZoom(1);
+              setX(50);
+              setY(50);
+            }}
+          >
+            Remove picture
+          </button>
         </div>
       )}
     </section>
   );
 }
 
-/** Admin control for setting another Banana's profile picture. */
-function AdminPhotoControl({
+/** Admin form for setting another Banana's profile picture. */
+function AdminPhotoForm({
   user,
   api,
   urlFor,
-  onSaved,
+  onClose,
 }: {
   user: any;
   api: (body: any) => Promise<any>;
   urlFor: (id: string) => string | undefined;
-  onSaved: () => Promise<void>;
+  onClose: (saved: boolean) => void;
 }) {
-  const [open, OPEN] = useState(false),
-    [photo, PHOTO] = useState(user.profilePhoto || ""),
+  const [photo, PHOTO] = useState(user.profilePhoto || ""),
     [zoom, ZOOM] = useState(user.profilePhotoCrop?.zoom || 1),
     [x, X] = useState(user.profilePhotoCrop?.x ?? 50),
     [y, Y] = useState(user.profilePhotoCrop?.y ?? 50),
@@ -3010,48 +3050,39 @@ function AdminPhotoControl({
       photoY: y,
     });
     B(false);
-    if (r) {
-      OPEN(false);
-      await onSaved();
-    }
+    if (r) onClose(true);
   }
   return (
-    <div className="admin-photo-control">
-      <button
-        className="text-btn"
-        disabled={user.disabled}
-        onClick={() => OPEN((v) => !v)}
-      >
-        Profile picture
-      </button>
-      {open && (
-        <div className="admin-photo-popover">
-          <ProfilePhotoEditor
-            value={photo}
-            onChange={PHOTO}
-            zoom={zoom}
-            setZoom={ZOOM}
-            x={x}
-            setX={X}
-            y={y}
-            setY={Y}
-            urlFor={urlFor}
-            onBusy={B}
-            onError={E}
-            target={user.id}
-          />
-          {error && <p className="form-error">{error}</p>}
-          <div className="account-actions">
-            <button className="primary" disabled={busy} onClick={save}>
-              Save picture
-            </button>
-            <button className="outline" onClick={() => OPEN(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
+    <section className="admin-reset">
+      <h3>Profile picture for @{user.username}</h3>
+      <ProfilePhotoEditor
+        value={photo}
+        onChange={PHOTO}
+        zoom={zoom}
+        setZoom={ZOOM}
+        x={x}
+        setX={X}
+        y={y}
+        setY={Y}
+        urlFor={urlFor}
+        onBusy={B}
+        onError={E}
+        target={user.id}
+      />
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
       )}
-    </div>
+      <div className="account-actions">
+        <button className="primary" disabled={busy} onClick={save}>
+          {busy ? "Saving…" : "Save picture"}
+        </button>
+        <button className="outline" onClick={() => onClose(false)}>
+          Cancel
+        </button>
+      </div>
+    </section>
   );
 }
 

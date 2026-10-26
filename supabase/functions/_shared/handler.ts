@@ -445,6 +445,14 @@ async function route(body: any, ctx: Context): Promise<Reply> {
           d.settings.weights.description,
           "Profile description",
         );
+      if (me.profilePhoto)
+        award(
+          d,
+          "picture:" + uid,
+          uid,
+          d.settings.weights.picture ?? weights.picture,
+          "Profile picture",
+        );
     }
 
     // The birthday person can never open their own event.
